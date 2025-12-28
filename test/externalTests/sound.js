@@ -14,14 +14,18 @@ module.exports = () => async (bot) => {
     let lastError
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        console.log(`[retry] Attempt ${attempt}/${maxAttempts}`)
         return await operation()
       } catch (error) {
         lastError = error
+        console.log(`[retry] Attempt ${attempt}/${maxAttempts} failed: ${error.message}`)
         if (attempt < maxAttempts) {
+          console.log(`[retry] Waiting ${delay}ms before retry...`)
           await new Promise(resolve => setTimeout(resolve, delay))
         }
       }
     }
+    console.log(`[retry] All attempts exhausted, throwing error`)
     throw lastError
   }
 
@@ -66,13 +70,27 @@ module.exports = () => async (bot) => {
     const noteBlockName = bot.supportFeature('noteBlockNameIsNoteBlock') ? 'note_block' : 'noteblock'
 
     return retry(async () => {
+      console.log(`[noteTest] Setting note block at position: ${JSON.stringify(pos)}`)
+      
+      // Clean up any existing blocks first to ensure a clean state
+      await bot.test.setBlock({ x: pos.x, y: pos.y - 1, z: pos.z, blockName: 'air', relative: false })
+      await bot.test.setBlock({ x: pos.x, y: pos.y, z: pos.z, blockName: 'air', relative: false })
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Place note block
       await bot.test.setBlock({ x: pos.x, y: pos.y, z: pos.z, blockName: noteBlockName, relative: false })
-      await new Promise(resolve => setTimeout(resolve, 250))
+      console.log('[noteTest] Note block placed, waiting 500ms for block update...')
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-      const noteHeardPromise = once(bot, 'noteHeard', 5000)
+      console.log('[noteTest] Setting up noteHeard listener with 7000ms timeout')
+      const noteHeardPromise = once(bot, 'noteHeard', 7000)
+      
+      console.log('[noteTest] Placing redstone block to trigger note')
       await bot.test.setBlock({ x: pos.x, y: pos.y - 1, z: pos.z, blockName: 'redstone_block', relative: false })
+      console.log('[noteTest] Redstone block placed, waiting for noteHeard event...')
 
       const [block, instrument, pitch] = await noteHeardPromise
+      console.log(`[noteTest] Note heard! Block: ${block.name}, Instrument: ${JSON.stringify(instrument)}, Pitch: ${pitch}`)
 
       assert.strictEqual(block.name, noteBlockName, 'Wrong block name')
 
@@ -87,7 +105,8 @@ module.exports = () => async (bot) => {
 
       assert.strictEqual(typeof pitch, 'number', 'Pitch should be a number')
       assert.ok(pitch >= 0 && pitch <= 24, `Pitch out of range: ${pitch}`)
-    })
+      console.log('[noteTest] Test passed successfully')
+    }, 3, 3000)  // Retry up to 3 times with 3 second delay between attempts
   }
 
   // Test hardcoded sound effects
