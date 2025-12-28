@@ -80,41 +80,65 @@ module.exports = () => async (bot) => {
     return retry(async () => {
       console.log(`[noteTest] Setting note block at position: ${JSON.stringify(pos)}`)
 
-      // Clean up any existing blocks first to ensure a clean state
-      await cleanupNoteBlocks(pos)
-      await new Promise(resolve => setTimeout(resolve, CLEANUP_DELAY))
-
-      // Place note block
-      await bot.test.setBlock({ x: pos.x, y: pos.y, z: pos.z, blockName: noteBlockName, relative: false })
-      console.log('[noteTest] Note block placed, waiting 500ms for block update...')
-      await new Promise(resolve => setTimeout(resolve, BLOCK_PLACEMENT_DELAY))
-
-      console.log('[noteTest] Setting up noteHeard listener with 7000ms timeout')
-      const noteHeardPromise = once(bot, 'noteHeard', 7000)
-
-      console.log('[noteTest] Placing redstone block to trigger note')
-      await bot.test.setBlock({ x: pos.x, y: pos.y - 1, z: pos.z, blockName: 'redstone_block', relative: false })
-      console.log('[noteTest] Redstone block placed, waiting for noteHeard event...')
-
-      const [block, instrument, pitch] = await noteHeardPromise
-      console.log(`[noteTest] Note heard! Block: ${block.name}, Instrument: ${JSON.stringify(instrument)}, Pitch: ${pitch}`)
-
-      assert.strictEqual(block.name, noteBlockName, 'Wrong block name')
-
-      // Validate instrument type (can be string or object depending on version)
-      if (typeof instrument === 'string') {
-        // String instrument name (older versions)
-      } else if (typeof instrument === 'object' && instrument !== null) {
-        // Object with name and id (newer versions)
-        assert.ok(typeof instrument.name === 'string', 'Instrument name should be a string')
-        assert.ok(typeof instrument.id === 'number', 'Instrument id should be a number')
-      } else {
-        throw new Error(`Unexpected instrument type: ${typeof instrument}`)
+      // Add debug listener for block_action packets
+      let blockActionReceived = false
+      const blockActionListener = (packet) => {
+        console.log(`[noteTest] block_action packet received: blockId=${packet.blockId}, byte1=${packet.byte1}, byte2=${packet.byte2}, location=${JSON.stringify(packet.location)}`)
+        blockActionReceived = true
       }
+      bot._client.on('block_action', blockActionListener)
 
-      assert.strictEqual(typeof pitch, 'number', 'Pitch should be a number')
-      assert.ok(pitch >= 0 && pitch <= 24, `Pitch out of range: ${pitch}`)
-      console.log('[noteTest] Test passed successfully')
+      try {
+        // Clean up any existing blocks first to ensure a clean state
+        await cleanupNoteBlocks(pos)
+        await new Promise(resolve => setTimeout(resolve, CLEANUP_DELAY))
+
+        // Place note block
+        await bot.test.setBlock({ x: pos.x, y: pos.y, z: pos.z, blockName: noteBlockName, relative: false })
+        console.log('[noteTest] Note block placed, waiting 500ms for block update...')
+        await new Promise(resolve => setTimeout(resolve, BLOCK_PLACEMENT_DELAY))
+
+        // Check what block is at the position
+        const placedBlock = bot.blockAt(pos)
+        console.log(`[noteTest] Block at position after placement: ${placedBlock ? `${placedBlock.name} (type=${placedBlock.type}, metadata=${placedBlock.metadata})` : 'null'}`)
+
+        console.log('[noteTest] Setting up noteHeard listener with 7000ms timeout')
+        const noteHeardPromise = once(bot, 'noteHeard', 7000)
+
+        console.log('[noteTest] Placing redstone block to trigger note')
+        await bot.test.setBlock({ x: pos.x, y: pos.y - 1, z: pos.z, blockName: 'redstone_block', relative: false })
+        console.log('[noteTest] Redstone block placed, waiting for noteHeard event...')
+
+        // Check blocks after redstone placement
+        const noteBlockAfter = bot.blockAt(pos)
+        const redstoneBlock = bot.blockAt(pos.offset(0, -1, 0))
+        console.log(`[noteTest] Note block after redstone: ${noteBlockAfter ? `${noteBlockAfter.name} (type=${noteBlockAfter.type})` : 'null'}`)
+        console.log(`[noteTest] Redstone block: ${redstoneBlock ? `${redstoneBlock.name} (type=${redstoneBlock.type})` : 'null'}`)
+
+        const [block, instrument, pitch] = await noteHeardPromise
+        console.log(`[noteTest] Note heard! Block: ${block.name}, Instrument: ${JSON.stringify(instrument)}, Pitch: ${pitch}`)
+        console.log(`[noteTest] block_action packet was ${blockActionReceived ? 'received' : 'NOT received'}`)
+
+        assert.strictEqual(block.name, noteBlockName, 'Wrong block name')
+
+        // Validate instrument type (can be string or object depending on version)
+        if (typeof instrument === 'string') {
+          // String instrument name (older versions)
+        } else if (typeof instrument === 'object' && instrument !== null) {
+          // Object with name and id (newer versions)
+          assert.ok(typeof instrument.name === 'string', 'Instrument name should be a string')
+          assert.ok(typeof instrument.id === 'number', 'Instrument id should be a number')
+        } else {
+          throw new Error(`Unexpected instrument type: ${typeof instrument}`)
+        }
+
+        assert.strictEqual(typeof pitch, 'number', 'Pitch should be a number')
+        assert.ok(pitch >= 0 && pitch <= 24, `Pitch out of range: ${pitch}`)
+        console.log('[noteTest] Test passed successfully')
+      } finally {
+        bot._client.removeListener('block_action', blockActionListener)
+        console.log(`[noteTest] Final status: block_action packet was ${blockActionReceived ? 'received' : 'NOT received'}`)
+      }
     }, 3, 3000) // Retry up to 3 times with 3 second delay between attempts
   }
 
