@@ -1,0 +1,10 @@
+{
+  "name": "stay-put-bot",
+  "version": "1.0.0",
+  "description": "Minimal stay-put mineflayer bot",
+  "main": "stay-put.js",
+  "license": "MIT",
+  "dependencies": {
+    "mineflayer": "^4.33.0"
+  }
+}

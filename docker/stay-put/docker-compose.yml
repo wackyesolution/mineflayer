@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  stayput:
+    build:
+      context: .
+      dockerfile: docker/stay-put/Dockerfile
+    environment:
+      MC_HOST: ${MC_HOST:-localhost}
+      MC_PORT: ${MC_PORT:-25565}
+      MC_USERNAME: ${MC_USERNAME:-StayPutBot}
+      MC_AUTH: ${MC_AUTH:-offline}
+      MC_VERSION: ${MC_VERSION:-}
+    restart: unless-stopped
+    # uncomment if the MC server runs on the host machine and you need direct access
+    # network_mode: "host"
